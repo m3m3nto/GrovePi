@@ -1,0 +1,55 @@
+import time
+import grovepi
+import httplib, urllib
+import os
+import subprocess
+import grequests
+
+# The sensitivity can be adjusted by the onboard potentiometer
+# Connect the Grove Gas Sensor to analog port A0
+# SIG,NC,VCC,GND
+gas_sensor = 0
+temp_sensor = 1
+grovepi.pinMode(gas_sensor,"INPUT")
+
+while True:
+    try:
+        # Get sensor value
+        sensor_value = grovepi.analogRead(gas_sensor)
+        # Calculate gas density - large value means more dense gas
+        density = (float)(sensor_value*0.000976563)
+        # Calculate temp
+        temp_value = grovepi.temp(temp_sensor)
+        if temp_value > 24.5:
+                try:
+			url = "https://api.particle.io/v1/devices/290040000747343337373738/reactOn";
+                	payload = {'access_token': 'f4ef964d9946430b04bf00930640bb1dfbcd9292', 'args': 'rainbow'}
+			r = grequests.post(url, data=payload, stream=True)
+		except:
+                	print "connection failed"	
+	# Acquire internal SoC temperature
+        cmd = '/opt/vc/bin/vcgencmd measure_temp'
+        rpi_temp_not_clean = os.popen(cmd).readline().strip()
+        rpi_temp = rpi_temp_not_clean.split('=')[1].split("'")[0]
+        prox_calc = subprocess.Popen("sudo /home/pi/twalarm/photoalarm", stdout=subprocess.PIPE, shell=True)
+        (prox, err) = prox_calc.communicate()
+
+        print "temp =", temp_value, "co sensor_value =", sensor_value, " density =", density, " rpi temp =", rpi_temp, "proximity_value =", prox
+
+        params = urllib.urlencode({'field1': sensor_value, 'field2': density, 'field3': temp_value, 'field4': rpi_temp, 'field5': prox, 'key':''})
+        headers = {"Content-type": "application/x-www-form-urlencoded","Accept": "text/plain"}
+        conn = httplib.HTTPConnection("api.thingspeak.com:80")
+
+        try:
+                conn.request("POST", "/update", params, headers)
+                response = conn.getresponse()
+                #print response.status, response.reason
+                data = response.read()
+                conn.close()
+        except:
+                print "connection failed"
+
+        time.sleep(2)
+
+    except IOError:
+        print "IO Error"
